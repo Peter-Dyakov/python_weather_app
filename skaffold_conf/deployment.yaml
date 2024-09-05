@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flask-weather-app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: flask-weather-app
+  template:
+    metadata:
+      labels:
+        app: flask-weather-app
+    spec:
+      containers:
+      - name: flask-weather-app
+        image: flask-weather-app:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
+        livenessProbe:
+          httpGet:
+            path: /health  # Flask endpoint for liveness check
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready  # Flask endpoint for readiness check
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
