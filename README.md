@@ -14,7 +14,7 @@ This repository contains a Flask web application that displays the current weath
 ## Project Overview
 
 - **Flask Web App**: Displays the current temperature for a city using a weather API.
-- **Infrastructure**: Terraform provisions two EC2 instances and an AWS load balancer.
+- **Infrastructure**: Terraform provisions two EC2 instances, AWS load balancer, ECR and dynamodb table.
 - **Deployment**: The Dockerized app is built, pushed to Amazon Elastic Container Registry (ECR), and deployed to EC2 via GitHub Actions.
 - **Local Development**: Skaffold is used for fast iteration and Kubernetes management.
 
@@ -53,12 +53,17 @@ eval $(minikube docker-env)
    git clone https://github.com/Peter-Dyakov/python_weather_app.git
    cd flask-weather-app
    ```
-2. Run the application locally using Skaffold
+2. Create a Secret for the Weather API Token
+
+   ```bash
+   kubectl create secret generic weather-api-token --from-literal=WEATHER_API_TOKEN=your_weather_api_token_here
+   ```
+3. Run the application locally using Skaffold
 
     ```bash
     skaffold dev
     ```
-3. Access the application in your browser
+4. Access the application in your browser
 
     ```bash
     kubectl port-forward service/flask-weather-app-service 8080:80
@@ -67,7 +72,14 @@ eval $(minikube docker-env)
 
 ## AWS Deployment using Terraform
 
-### Step 1: Set Up AWS Infrastructure with Terraform
+### Step 1: Create s3 bucket to store statefulset file
+   ```bash
+   aws s3api create-bucket --bucket lytx-assignment-terraform-state-bucket --region us-east-1
+   aws s3api put-bucket-versioning --bucket lytx-assignment-terraform-state-bucket --versioning-configuration Status=Enabled
+
+   ```
+
+### Step 2: Set Up AWS Infrastructure with Terraform
 
    ```bash
    cd terraform
@@ -80,7 +92,7 @@ Once Terraform has successfully provisioned the resources, you can access the ap
     http://<elb_dns_name>
     ```
 
-### Step 2: Deploy Application to EC2 via GitHub Actions
+### Step 3: Deploy Application to EC2 via GitHub Actions
 
 The GitHub Actions workflow is configured to trigger when a **pull request** is opened or updated on the `main` branch. The workflow will automatically perform the following steps:
 

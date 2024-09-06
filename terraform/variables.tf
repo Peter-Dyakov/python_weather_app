@@ -1,7 +1,23 @@
+variable "s3_bucket_name" {
+  description = "The name of the S3 bucket for Terraform state storage"
+  default     = "lytx-assignment-terraform-state-bucket"
+}
+
 variable "aws_region" {
   description = "The AWS region to deploy resources"
   default     = "us-east-1"
 }
+
+variable "alb_az" {
+  description = "The name of Load Balancer availability zones"
+  default     = ["us-east-1a", "us-east-1b"]
+}
+
+variable "environment" {
+  description = "The environment name (e.g., dev, prod) for tagging and bucket naming"
+  default     = "dev"
+}
+
 
 variable "vpc_cidr_block" {
   description = "CIDR block for the VPC"
@@ -15,7 +31,7 @@ variable "public_subnet_cidr_block" {
 
 variable "ami_id" {
   description = "AMI ID to use for EC2 instances"
-  default     = "ami-0c55b159cbfafe1f0"  # Amazon Linux 2 AMI ID for us-east-1
+  default     = "ami-0182f373e66f89c85"  # Amazon Linux 2 AMI ID for us-east-1
 }
 
 variable "instance_type" {
@@ -27,3 +43,5 @@ variable "ecr_repository_name" {
   description = "Name of the ECR repository for the application"
   default     = "flask-app-repo"
 }
+
+

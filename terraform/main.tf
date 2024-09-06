@@ -2,15 +2,63 @@ provider "aws" {
   region = var.aws_region
 }
 
+terraform {
+  backend "s3" {
+    bucket         = "lytx-assignment-terraform-state-bucket"
+    key            = "terraform/state"
+    region         = "us-east-1"
+    dynamodb_table = "terraform-locks"  # This enables state locking
+  }
+}
+
+
+# DynamoDB Table for state locking
+resource "aws_dynamodb_table" "terraform_locks" {
+  name         = "terraform-locks"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  tags = {
+    Name        = "TerraformStateLocks"
+    Environment = var.environment
+  }
+}
+
+
 # VPC, Subnet, and Internet Gateway Configuration
 resource "aws_vpc" "vpc" {
   cidr_block = var.vpc_cidr_block
+  tags = {
+    Name = "lytx-assignment"
+  }
 }
 
-resource "aws_subnet" "public_subnet" {
-  vpc_id            = aws_vpc.vpc.id
-  cidr_block        = var.public_subnet_cidr_block
+
+resource "aws_subnet" "public_subnet_1" {
+  vpc_id     = aws_vpc.vpc.id
+  cidr_block = "10.0.1.0/24"
+  availability_zone = "us-east-1a"  # Specify an AZ
   map_public_ip_on_launch = true
+
+  tags = {
+    Name = "Public Subnet 1"
+  }
+}
+
+resource "aws_subnet" "public_subnet_2" {
+  vpc_id     = aws_vpc.vpc.id
+  cidr_block = "10.0.2.0/24"
+  availability_zone = "us-east-1b"  # Specify a different AZ
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "Public Subnet 2"
+  }
 }
 
 resource "aws_internet_gateway" "igw" {
@@ -25,30 +73,14 @@ resource "aws_route_table" "public" {
   }
 }
 
-# Security Group for ALB
-resource "aws_security_group" "alb_sg" {
-  name        = "alb-sg"
-  description = "Security group for ALB"
-  vpc_id      = aws_vpc.vpc.id
+resource "aws_route_table_association" "public_assoc_1" {
+  subnet_id      = aws_subnet.public_subnet_1.id  # Associate with the public subnet
+  route_table_id = aws_route_table.public.id
+}
 
-  # Allow incoming HTTP traffic to ALB from anywhere
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name = "ALB-SG"
-  }
+resource "aws_route_table_association" "public_assoc_2" {
+  subnet_id      = aws_subnet.public_subnet_2.id  # Associate with the public subnet
+  route_table_id = aws_route_table.public.id
 }
 
 # Security Group for EC2 Instances
@@ -86,17 +118,17 @@ resource "aws_security_group" "allow_ssh_http" {
 # Key Pair for SSH Access
 resource "aws_key_pair" "deployer_key_pair" {
   key_name   = "deployer_key"
-  public_key = file("~/.ssh/id_rsa.pub")
+  public_key = file("~/.ssh/id_ed25519.pub")
 }
 
-# EC2 Instances
 resource "aws_instance" "ec2_instances" {
   count         = 2
   ami           = var.ami_id
   instance_type = var.instance_type
   key_name      = aws_key_pair.deployer_key_pair.key_name
-  security_groups = [aws_security_group.allow_ssh_http.name]
-  subnet_id     = aws_subnet.public_subnet.id
+  vpc_security_group_ids = [aws_security_group.allow_ssh_http.id]  # Use vpc_security_group_ids
+  # Assign EC2 instances to different subnets based on their index
+  subnet_id = element([aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id], count.index)
 
   tags = {
     Name = "FlaskApp-${count.index}"
@@ -111,63 +143,84 @@ resource "aws_instance" "ec2_instances" {
               EOF
 }
 
-# Load Balancer (ALB)
-resource "aws_elb" "app_elb" {
-  name               = "flask-app-elb"
-  availability_zones = ["us-east-1a", "us-east-1b"]
-  security_groups    = [aws_security_group.alb_sg.id]
 
-  listener {
-    instance_port     = 80
-    instance_protocol = "HTTP"
-    lb_port           = 80
-    lb_protocol       = "HTTP"
+# VPC, Subnet, and Security Group definitions should already be created above
+
+# Security group for the ALB
+resource "aws_security_group" "alb_sg" {
+  name        = "alb-sg"
+  description = "Security group for ALB"
+  vpc_id      = aws_vpc.vpc.id   # Ensure this is the correct VPC
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]   # Allow HTTP traffic from anywhere
   }
 
-  instances = aws_instance.ec2_instances[*].id
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]   # Allow all outgoing traffic
+  }
+
+  tags = {
+    Name = "ALB-SG"
+  }
+}
+
+# Application Load Balancer (ALB)
+resource "aws_lb" "app_alb" {
+  name               = "flask-app-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]   # Use the security group created above
+  # Specify at least two subnets in different Availability Zones
+  subnets = [
+    aws_subnet.public_subnet_1.id,
+    aws_subnet.public_subnet_2.id
+  ]
+}
+
+# ALB Target Group
+resource "aws_lb_target_group" "app_tg" {
+  name     = "flask-app-tg"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.vpc.id   # Ensure this is the correct VPC
 
   health_check {
-    target              = "HTTP:80/"
+    path                = "/health"
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
     unhealthy_threshold = 2
   }
+}
 
-  tags = {
-    Name = "FlaskAppELB"
+# ALB Listener
+resource "aws_lb_listener" "app_listener" {
+  load_balancer_arn = aws_lb.app_alb.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_tg.arn
   }
 }
 
-# ECR Repository for Docker Images
-resource "aws_ecr_repository" "flask_app_repo" {
-  name = var.ecr_repository_name
-
-  image_scanning_configuration {
-    scan_on_push = true
-  }
-
-  tags = {
-    Name = "FlaskAppECR"
-  }
+# Register EC2 Instances to Target Group
+resource "aws_lb_target_group_attachment" "app_tg_attachment_1" {
+  target_group_arn = aws_lb_target_group.app_tg.arn
+  target_id        = aws_instance.ec2_instances[0].id
+  port             = 80
 }
 
-# Outputs for ECR Repository and Load Balancer DNS
-output "ecr_repository_url" {
-  value = aws_ecr_repository.flask_app_repo.repository_url
-}
-
-output "elb_dns_name" {
-  value = aws_elb.app_elb.dns_name
-}
-
-# Output Public IPs of EC2 Instances
-output "ec2_instance_1_public_ip" {
-  description = "The public IP address of the first EC2 instance"
-  value       = aws_instance.ec2_instances[0].public_ip
-}
-
-output "ec2_instance_2_public_ip" {
-  description = "The public IP address of the second EC2 instance"
-  value       = aws_instance.ec2_instances[1].public_ip
+resource "aws_lb_target_group_attachment" "app_tg_attachment_2" {
+  target_group_arn = aws_lb_target_group.app_tg.arn
+  target_id        = aws_instance.ec2_instances[1].id
+  port             = 80
 }

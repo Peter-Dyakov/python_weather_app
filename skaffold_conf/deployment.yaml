@@ -15,18 +15,36 @@ spec:
       containers:
       - name: flask-weather-app
         image: flask-weather-app:latest
-        imagePullPolicy: Never
         ports:
         - containerPort: 5000
+
+        # Environment Variables
+        env:
+        - name: WEATHER_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: weather-api-token
+              key: WEATHER_API_TOKEN
+
+        # Liveness and Readiness Probes
         livenessProbe:
           httpGet:
-            path: /health  # Flask endpoint for liveness check
+            path: /health
             port: 5000
           initialDelaySeconds: 5
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /ready  # Flask endpoint for readiness check
+            path: /ready
             port: 5000
           initialDelaySeconds: 10
           periodSeconds: 5
+
+        # Resource Requests and Limits
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "250m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
