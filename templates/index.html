@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>City Temperature Finder</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+        .result {
+            text-align: center;
+            font-size: 18px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>City Temperature Finder</h1>
+        <form id="temperature-form">
+            <label for="city">Enter city name:</label>
+            <input type="text" id="city" name="city" required>
+            <button type="submit">Get Temperature</button>
+        </form>
+        <div class="result" id="result"></div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            $('#temperature-form').on('submit', function(event) {
+                event.preventDefault();
+                
+                var city = $('#city').val();
+                
+                $.ajax({
+                    url: '/get_temperature',
+                    type: 'POST',
+                    data: { city: city },
+                    success: function(data) {
+                        if (data.error) {
+                            $('#result').html('<p style="color: red;">' + data.error + '</p>');
+                        } else {
+                            $('#result').html('<p>Current temperature in ' + data.city + ': ' + data.temperature + '°C</p>');
+                        }
+                    },
+                    error: function() {
+                        $('#result').html('<p style="color: red;">An error occurred while fetching the temperature.</p>');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

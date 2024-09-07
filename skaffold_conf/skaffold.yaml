@@ -1,0 +1,12 @@
+apiVersion: skaffold/v2beta10
+kind: Config
+metadata:
+  name: flask-weather-app
+build:
+  local:
+    push: false
+deploy:
+  kubectl:
+    manifests:
+      - deployment.yaml
+      - service.yaml
